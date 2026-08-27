@@ -1,6 +1,6 @@
 {
   "name": "@nibub-labs/globbook-auth",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official TypeScript SDK for \"Sign in with Globbook\" OAuth 2.0 — server-side client for the authorization code flow, token exchange, and user info.",
   "keywords": [
     "globbook",
