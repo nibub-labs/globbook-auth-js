@@ -1,0 +1,57 @@
+{
+  "name": "@nibub-labs/globbook-auth",
+  "version": "1.0.0",
+  "description": "Official TypeScript SDK for \"Sign in with Globbook\" OAuth 2.0 — server-side client for the authorization code flow, token exchange, and user info.",
+  "keywords": [
+    "globbook",
+    "oauth",
+    "oauth2",
+    "sign in with globbook",
+    "authentication",
+    "sdk"
+  ],
+  "license": "MIT",
+  "author": "Nibub",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nibub-labs/globbook-auth-js.git"
+  },
+  "homepage": "https://github.com/nibub-labs/globbook-auth-js#readme",
+  "bugs": {
+    "url": "https://github.com/nibub-labs/globbook-auth-js/issues"
+  }
+}

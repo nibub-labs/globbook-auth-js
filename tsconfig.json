@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "declaration": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    // tsup unconditionally injects `baseUrl: "."` into the tsconfig it
+    // passes to rollup-plugin-dts during .d.ts generation — a known,
+    // currently-open tsup bug (egoist/tsup#1388), not something set in
+    // this file. TypeScript 6 treats a deprecated-but-unused baseUrl as a
+    // hard build error (TS5101) rather than a warning; this is the
+    // documented workaround until tsup stops injecting it. Safe to remove
+    // once that's fixed upstream.
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src"]
+}
