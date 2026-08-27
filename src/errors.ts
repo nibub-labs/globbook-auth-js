@@ -11,12 +11,18 @@
  *   `application/x-www-form-urlencoded`. You should never see this from the SDK
  *   itself (it always sends the correct content type), but it's included in case
  *   a proxy or custom `fetch` implementation rewrites the request.
+ * - `timeout` — the request did not complete within `requestTimeoutMs` (see
+ *   {@link GlobbookAuthConfig.requestTimeoutMs}). Raised by this SDK, not the API.
+ * - `network_error` — the request failed before reaching the API (DNS, TLS,
+ *   connection refused). Raised by this SDK, not the API.
  */
 export type GlobbookOAuthErrorCode =
   | 'invalid_request'
   | 'invalid_grant'
   | 'invalid_token'
   | 'unsupported_media_type'
+  | 'timeout'
+  | 'network_error'
   | (string & {});
 
 /**

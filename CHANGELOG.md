@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.1.0
+
+- **Fixed**: `UserInfo.birthdate` and `UserInfo.gender` are now `string | null` instead of
+  `string`. Globbook's `/api/v2/oauth/userinfo` omits these fields entirely (not as empty
+  strings) unless your app is verified in the Globbook Developer Console and the user granted the
+  matching scope at consent time. If you compared either field to `''`, switch to a `null` check
+  instead.
+- **Added**: `UserInfo.phoneNumber` and `UserInfo.address` (`string | null`) — restricted claims
+  that were previously unreachable through this SDK entirely.
+- **Changed**: `getAuthorizationUrl()` now takes a single options object
+  (`{ scopes?, state? }`) instead of a bare scopes array — this ships alongside the new `state`
+  support below rather than as a separate later change.
+- **Added**: `getAuthorizationUrl({ scopes })` requests restricted claims (`'birthdate' |
+  'gender' | 'phone' | 'address'`) — previously there was no way to request these scopes at all, so
+  `getUserInfo` could never have returned them regardless of app verification status.
+- **Added**: `getAuthorizationUrl({ state })` / `CallbackParams.state` — optional CSRF protection
+  (RFC 6749 §10.12). Generate an unguessable value, pass it as `state`, and compare
+  `parseCallbackParams()`'s returned `state` against it in your callback handler before exchanging
+  the code. Entirely opt-in; omitting it changes no other behavior. See the README's "CSRF
+  protection (state)" section.
+
 ## 1.0.1 - Republish
 
 No functional changes — version bump to publish the package to npm.

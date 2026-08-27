@@ -32,6 +32,14 @@ export interface GlobbookAuthConfig {
    * Override this to point at a staging/self-hosted environment.
    */
   baseUrl?: string;
+
+  /**
+   * Timeout in milliseconds applied to every HTTP request this client makes
+   * (token exchange, userinfo). Defaults to 10000 (10s) so a slow or
+   * unresponsive Globbook endpoint can't hang your request handler
+   * indefinitely. Pass `0` to disable the timeout entirely.
+   */
+  requestTimeoutMs?: number;
 }
 
 /**
@@ -77,11 +85,30 @@ export interface UserInfo {
   coverImage: string | null;
   /** May be an empty string if unset. */
   website: string;
-  /** `YYYY-MM-DD`, or an empty string if unset. */
-  birthdate: string;
-  /** May be an empty string if unset. */
-  gender: string;
+
+  /**
+   * Restricted claims. Each is `null` unless BOTH are true: your app is
+   * verified in the Globbook Developer Console, and the user granted the
+   * matching scope (`"birthdate"`, `"gender"`, `"phone"`, `"address"`) on
+   * the consent screen — request scopes via
+   * {@link GlobbookAuth.getAuthorizationUrl}'s `scopes` option. An
+   * unverified app never receives these regardless of what's requested or
+   * approved.
+   */
+  birthdate: string | null;
+  gender: string | null;
+  phoneNumber: string | null;
+  /** `"city country"` — this platform stores no street-level address. */
+  address: string | null;
 }
+
+/**
+ * Restricted OIDC-style scopes you may request via
+ * {@link GlobbookAuth.getAuthorizationUrl}'s `scopes` option. Requesting a
+ * scope only has an effect if your app is verified in the Globbook
+ * Developer Console — see the `UserInfo` restricted-claims doc comment.
+ */
+export type GlobbookScope = 'birthdate' | 'gender' | 'phone' | 'address';
 
 /**
  * Result of {@link GlobbookAuth.parseCallbackParams} — the authorization code
@@ -94,6 +121,16 @@ export interface CallbackParams {
    * `null` if `code` was not present in the URL.
    */
   code: string | null;
+
+  /**
+   * The CSRF-protection value Globbook echoed back, if you passed one to
+   * {@link GlobbookAuth.getAuthorizationUrl}'s `state` option. `null` if you
+   * didn't send one, or it wasn't present in the callback URL. If you sent
+   * one, compare this against what you stored before redirecting and reject
+   * the callback on a mismatch — see the README's "CSRF protection (state)"
+   * section.
+   */
+  state: string | null;
 }
 
 /** @internal Raw shape of a successful `POST /api/v2/oauth/token` response. */
@@ -116,8 +153,10 @@ export interface RawUserInfoResponse {
   picture: string | null;
   cover_image: string | null;
   website: string;
-  birthdate: string;
-  gender: string;
+  birthdate?: string;
+  gender?: string;
+  phone_number?: string;
+  address?: string;
 }
 
 /** @internal Raw shape of an OAuth-standard error response body. */

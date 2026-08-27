@@ -4,6 +4,7 @@ export type { GlobbookOAuthErrorCode } from './errors';
 export type {
   CallbackParams,
   GlobbookAuthConfig,
+  GlobbookScope,
   TokenResponse,
   UserInfo,
 } from './types';

@@ -97,6 +97,7 @@ if a required field is missing, rather than failing on the first API call.
 | `clientSecret` | `string` | yes | Your app's client secret. **Server-side only** — see [Security](#security). |
 | `redirectUrl` | `string` | yes | Must exactly match the redirect URL registered for this app. |
 | `baseUrl` | `string` | no | Defaults to `https://globbook.com`. Override for staging/self-hosted environments. |
+| `requestTimeoutMs` | `number` | no | Defaults to `10000` (10s). Applied to every request; pass `0` to disable. |
 
 ```ts
 const client = new GlobbookAuth({
@@ -108,7 +109,7 @@ const client = new GlobbookAuth({
 
 ---
 
-### `client.getAuthorizationUrl(): string`
+### `client.getAuthorizationUrl(options?: { scopes?: GlobbookScope[]; state?: string }): string`
 
 Builds the URL to redirect the user's browser to for the Globbook consent
 screen. Makes no network request — it's a pure URL builder. Your app is
@@ -120,16 +121,25 @@ const url = client.getAuthorizationUrl();
 res.redirect(url);
 ```
 
----
-
-### `GlobbookAuth.parseCallbackParams(input: string): { code: string | null }`
-
-**Static** helper. Framework-agnostic — accepts a full URL, a path+query
-string, or a bare query string. Extracts the authorization code from the
-callback request.
+Pass `scopes` to also request restricted claims (see
+[Restricted claims](#restricted-claims) below), and/or `state` for CSRF
+protection (see [CSRF protection (state)](#csrf-protection-state) below):
 
 ```ts
-const { code } = GlobbookAuth.parseCallbackParams(req.url);
+const url = client.getAuthorizationUrl({ scopes: ['birthdate', 'gender'], state: csrfToken });
+// => "https://globbook.com/api/v2/oauth/authorize?client_id=...&scope=birthdate+gender&state=..."
+```
+
+---
+
+### `GlobbookAuth.parseCallbackParams(input: string): { code: string | null; state: string | null }`
+
+**Static** helper. Framework-agnostic — accepts a full URL, a path+query
+string, or a bare query string. Extracts the authorization code (and CSRF
+state, if present) from the callback request.
+
+```ts
+const { code, state } = GlobbookAuth.parseCallbackParams(req.url);
 // req.url can be "/callback?code=abc123", a full URL, or "code=abc123"
 ```
 
@@ -177,8 +187,12 @@ interface UserInfo {
   picture: string | null;      // signed CDN URL, or null
   coverImage: string | null;   // signed CDN URL, or null
   website: string;
-  birthdate: string;           // "YYYY-MM-DD", or ""
-  gender: string;
+
+  // Restricted claims — see "Restricted claims" below.
+  birthdate: string | null;
+  gender: string | null;
+  phoneNumber: string | null;
+  address: string | null;
 }
 ```
 
@@ -189,6 +203,50 @@ console.log(user.email, user.preferredUsername);
 
 Throws `GlobbookAuthError` with code `invalid_token` if the access token is
 missing, malformed, or expired.
+
+### Restricted claims
+
+`birthdate`, `gender`, `phoneNumber`, and `address` are gated separately from
+the rest of the profile. Globbook only populates them — the field is `null`
+otherwise — when **both** are true:
+
+1. Your app has been verified in the Globbook Developer Console.
+2. You requested the matching scope (`'birthdate'`, `'gender'`, `'phone'`,
+   `'address'`) via `getAuthorizationUrl()`'s `scopes` argument, **and** the
+   signed-in user granted it on the consent screen — requesting a scope is
+   not the same as receiving it; the user can uncheck any scope
+   individually.
+
+An unverified app never receives these fields, regardless of what scopes it
+requests or what the user approves. Always check for `null` before use.
+
+### CSRF protection (state)
+
+Pass `state` to `getAuthorizationUrl()` to protect against login CSRF (RFC
+6749 §10.12): an attacker who obtains their own valid authorization code
+could otherwise trick a victim's browser into completing the attacker's
+login on the victim's session.
+
+```ts
+// Before redirecting — generate an unguessable value and store it
+// (session, signed cookie) tied to the current browser session.
+const csrfToken = crypto.randomUUID();
+req.session.oauthState = csrfToken;
+
+const url = client.getAuthorizationUrl({ state: csrfToken });
+res.redirect(url);
+
+// In your callback handler — compare before exchanging the code.
+const { code, state } = GlobbookAuth.parseCallbackParams(req.url);
+if (!code || state !== req.session.oauthState) {
+  return res.status(400).send('Invalid or missing state — possible CSRF.');
+}
+```
+
+`state` is entirely optional and Globbook never interprets it — it's
+echoed back unchanged, per the RFC 6749 `state` parameter. Omitting it does
+not change any other behavior; this is opt-in hardening, not a required
+step.
 
 ## Error handling
 
@@ -216,7 +274,9 @@ try {
 
 Common codes: `invalid_request` (missing/malformed field, HTTP 400),
 `invalid_grant` (bad code/credentials, HTTP 401), `invalid_token` (bad access
-token, HTTP 401).
+token, HTTP 401), `timeout` (request exceeded `requestTimeoutMs`, raised by
+the SDK), `network_error` (request failed before reaching the API, raised by
+the SDK).
 
 ## Security
 

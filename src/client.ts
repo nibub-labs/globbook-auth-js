@@ -2,6 +2,7 @@ import { GlobbookAuthError } from './errors';
 import type {
   CallbackParams,
   GlobbookAuthConfig,
+  GlobbookScope,
   RawOAuthErrorResponse,
   RawTokenResponse,
   RawUserInfoResponse,
@@ -11,6 +12,14 @@ import type {
 
 /** Default base URL used when {@link GlobbookAuthConfig.baseUrl} is not provided. */
 const DEFAULT_BASE_URL = 'https://globbook.com';
+
+/**
+ * Default request timeout (milliseconds) used when
+ * {@link GlobbookAuthConfig.requestTimeoutMs} is not provided. Applied to
+ * every HTTP request this client makes so a slow or unresponsive Globbook
+ * endpoint can't hang the caller indefinitely.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * Server-side client for "Sign in with Globbook" OAuth 2.0.
@@ -48,6 +57,7 @@ export class GlobbookAuth {
   private readonly clientSecret: string;
   private readonly redirectUrl: string;
   private readonly baseUrl: string;
+  private readonly requestTimeoutMs: number;
 
   /**
    * @param config - See {@link GlobbookAuthConfig}. `clientId`, `clientSecret`,
@@ -70,6 +80,15 @@ export class GlobbookAuth {
     this.clientSecret = config.clientSecret;
     this.redirectUrl = config.redirectUrl;
     this.baseUrl = normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL);
+    this.requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  }
+
+  /**
+   * @internal Builds the AbortSignal to attach to a request, honoring
+   * `requestTimeoutMs` (0 disables the timeout).
+   */
+  private timeoutSignal(): AbortSignal | undefined {
+    return this.requestTimeoutMs > 0 ? AbortSignal.timeout(this.requestTimeoutMs) : undefined;
   }
 
   /**
@@ -82,39 +101,66 @@ export class GlobbookAuth {
    * After the user approves, Globbook redirects back to the `redirectUrl`
    * this client was configured with, appending `?code=...`.
    *
+   * @param options.scopes - Restricted scopes to request in addition to the
+   *   base profile (`"birthdate"`, `"gender"`, `"phone"`, `"address"`) — see
+   *   {@link GlobbookScope}. Rendered as a space-delimited `scope` query
+   *   parameter. Requesting a scope only has an effect if this app is
+   *   verified in the Globbook Developer Console — Globbook's consent
+   *   screen never offers restricted scopes to an unverified app, and
+   *   {@link getUserInfo} never returns them either way unless the user
+   *   actually grants them at consent time. Omit for the base profile only.
+   * @param options.state - An opaque value you generate before redirecting
+   *   the user here — Globbook echoes it back unchanged in the `state`
+   *   query parameter on the redirect to your `redirectUrl`, so
+   *   {@link parseCallbackParams} can hand it back to you to compare
+   *   against what you stored before the redirect (RFC 6749 §10.12 CSRF
+   *   protection). Globbook never interprets this value itself. Optional;
+   *   omit to skip CSRF protection.
    * @returns The full authorization URL, e.g.
    *   `https://globbook.com/api/v2/oauth/authorize?client_id=...`.
    */
-  getAuthorizationUrl(): string {
+  getAuthorizationUrl(options?: { scopes?: GlobbookScope[]; state?: string }): string {
     const url = new URL('/api/v2/oauth/authorize', this.baseUrl);
     url.searchParams.set('client_id', this.clientId);
+    if (options?.scopes && options.scopes.length > 0) {
+      url.searchParams.set('scope', options.scopes.join(' '));
+    }
+    if (options?.state) {
+      url.searchParams.set('state', options.state);
+    }
     return url.toString();
   }
 
   /**
-   * Parses the `code` query parameter out of the callback request your app
-   * receives after the user approves consent. Framework-agnostic — accepts
-   * any full URL, path+query string, or bare query string, so it works the
-   * same whether you pass `req.url` from Express, `request.url` from a
-   * Fetch API `Request`, or `window.location.href`.
+   * Parses the `code` (and `state`, if present) query parameters out of the
+   * callback request your app receives after the user approves consent.
+   * Framework-agnostic — accepts any full URL, path+query string, or bare
+   * query string, so it works the same whether you pass `req.url` from
+   * Express, `request.url` from a Fetch API `Request`, or
+   * `window.location.href`.
    *
    * @param input - A full URL, a path with query string, or a bare query
    *   string (with or without a leading `?`).
-   * @returns `{ code }` — `code` is `null` if the parameter was not present.
+   * @returns `{ code, state }` — both are `null` if not present. If you
+   *   passed `state` to {@link getAuthorizationUrl}, compare the returned
+   *   `state` against what you stored before redirecting and reject the
+   *   callback on a mismatch — see the README's "CSRF protection (state)"
+   *   section.
    *
    * @example
    * ```ts
    * // Express
-   * const { code } = GlobbookAuth.parseCallbackParams(req.url);
+   * const { code, state } = GlobbookAuth.parseCallbackParams(req.url);
    *
    * // Fetch API / edge runtimes
-   * const { code } = GlobbookAuth.parseCallbackParams(request.url);
+   * const { code, state } = GlobbookAuth.parseCallbackParams(request.url);
    * ```
    */
   static parseCallbackParams(input: string): CallbackParams {
     const searchParams = extractSearchParams(input);
     const code = searchParams.get('code');
-    return { code };
+    const state = searchParams.get('state');
+    return { code, state };
   }
 
   /**
@@ -180,6 +226,7 @@ export class GlobbookAuth {
           Authorization: `Bearer ${accessToken}`,
           Accept: 'application/json',
         },
+        signal: this.timeoutSignal(),
       });
     } catch (cause) {
       throw networkError(cause);
@@ -206,6 +253,7 @@ export class GlobbookAuth {
           Accept: 'application/json',
         },
         body: body.toString(),
+        signal: this.timeoutSignal(),
       });
     } catch (cause) {
       throw networkError(cause);
@@ -263,6 +311,12 @@ function extractSearchParams(input: string): URLSearchParams {
 
 /** @internal Wraps a network-level failure (fetch throwing) into a GlobbookAuthError. */
 function networkError(cause: unknown): GlobbookAuthError {
+  if (cause instanceof Error && (cause.name === 'TimeoutError' || cause.name === 'AbortError')) {
+    return new GlobbookAuthError(
+      'timeout',
+      'Request to Globbook timed out. Increase requestTimeoutMs in GlobbookAuthConfig if this endpoint is expected to be slow.',
+    );
+  }
   const message = cause instanceof Error ? cause.message : 'Unknown network error';
   return new GlobbookAuthError('network_error', `Request to Globbook failed: ${message}`);
 }
@@ -318,7 +372,14 @@ function mapUserInfo(raw: RawUserInfoResponse): UserInfo {
     picture: raw.picture,
     coverImage: raw.cover_image,
     website: raw.website,
-    birthdate: raw.birthdate,
-    gender: raw.gender,
+    // Restricted claims are omitted from the JSON entirely (not sent as
+    // empty strings) unless the app is verified and the user granted the
+    // matching scope — normalize the missing key to null rather than
+    // `undefined` so callers get a consistent, always-present field to
+    // check.
+    birthdate: raw.birthdate ?? null,
+    gender: raw.gender ?? null,
+    phoneNumber: raw.phone_number ?? null,
+    address: raw.address ?? null,
   };
 }
