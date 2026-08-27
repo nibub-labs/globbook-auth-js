@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 - Republish
+
+No functional changes — version bump to publish the package to npm.
+
 ## 1.0.0 - Initial release
 
 Initial release of `@nibub-labs/globbook-auth`, the official TypeScript SDK for "Sign in with Globbook."
